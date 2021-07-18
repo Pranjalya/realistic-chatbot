@@ -1,36 +1,45 @@
 import os
-from collections import deque
+from collections import deque, defaultdict
 from flask import Flask, request
-import requests
 import openai
 from twilio.twiml.messaging_response import MessagingResponse
+from dotenv import load_dotenv
 
+load_dotenv()
 app = Flask(__name__)
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
-depth = os.getenv("MESSAGE_DEPTH")
+depth = int(os.getenv("MESSAGE_DEPTH"))
+users = defaultdict(lambda: deque(maxlen=depth * 2 + 1))
 
-@app.route('/bot', methods=['POST'])
+
+@app.route("/bot", methods=["POST"])
 def bot():
-    print(request.values)
-    in_msg = request.values.get('Body', '')
+    in_msg = request.values.get("Body", "")
+    user_id = request.values.get("WaId", "random")
+
+    users[user_id].append(f"User: {in_msg}")
     resp = MessagingResponse()
     msg = resp.message()
 
-    # response = openai.Completion.create(
-        # engine="ada",
-        # prompt="You: What have you been up to?\nFriend: Watching old movies.\nYou: Did you watch anything interesting?\nFriend:",
-        # temperature=0.4,
-        # max_tokens=60,
-        # top_p=1.0,
-        # frequency_penalty=0.5,
-        # presence_penalty=0.0,
-        # stop=["Bot:"]
-    # )
+    chat = "\n".join(users[user_id]) + "\nBot:"
 
-    msg.body(f"Jo")
+    response = openai.Completion.create(
+        engine="ada",
+        prompt=chat,
+        temperature=0.4,
+        max_tokens=50,
+        top_p=1.0,
+        frequency_penalty=0.5,
+        presence_penalty=0.0,
+        stop=["Bot:"],
+    )
+    text = response["choices"][0]["text"].split("\n", maxsplit=1)[0]
+    users[user_id].append(f"Bot: {text}")
+
+    msg.body(f"{text}")
     return str(resp)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run()
